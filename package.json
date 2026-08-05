@@ -1,0 +1,15 @@
+{
+  "name": "opencode-encodeguard-plugin",
+  "version": "1.0.0",
+  "description": "OpenCode plugin that replaces the built-in edit/read tools with encoding-aware variants, so files in GBK, GB18030, Big5, Shift_JIS, UTF-16, etc. don't get mojibake'd.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "iconv-lite": "^0.6.3",
+    "diff": "^9.0.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}
