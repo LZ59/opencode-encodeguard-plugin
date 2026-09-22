@@ -1,11 +1,12 @@
 // Encoding-aware replacement for opencode's built-in `edit` tool.
 //
-// Can be used in two ways:
+// Can be used in two ways (the V2 plugin entrypoint does NOT use this file —
+// V2 registers `src/v2/edit.ts`, which mirrors the V2.0.12 built-in):
 //   1. As a standalone custom tool: drop this file into `.opencode/tools/edit.ts`
 //      and the filename registers it as the `edit` tool (overrides built-in).
-//   2. As part of the encoding-guard-edit plugin: imported by `index.mjs` and
-//      registered via `tool: { edit }` in the plugin's returned hooks; per
-//      OpenCode docs, plugin tools shadow built-in tools of the same name.
+//   2. In an OpenCode V1 plugin: imported by the plugin entrypoint and
+//      registered via `tool: { edit }` in the hooks returned from `server()`;
+//      per OpenCode docs, plugin tools shadow built-in tools of the same name.
 //
 // Faithfully mirrors the v1.16.2 release `edit` (packages/core/src/tool/edit.ts,
 // the V2 exact-edit variant): exact-only matching (no fuzzy fallbacks — those
@@ -18,7 +19,8 @@
 // file's original encoding (GBK, GB18030, Big5, Shift_JIS, UTF-16 LE/BE,
 // UTF-32, etc.) and any BOM — so non-UTF-8 files are not corrupted.
 //
-// See https://opencode.ai/docs/custom-tools/
+// See https://opencode.ai/v2/docs/build/plugins (V2) and
+// https://opencode.ai/docs/custom-tools/ (V1 standalone tools)
 
 import * as path from "node:path"
 import * as fs from "node:fs"
@@ -26,7 +28,7 @@ import { createRequire } from "node:module"
 import { tool } from "@opencode-ai/plugin"
 import { createTwoFilesPatch, diffLines } from "diff"
 
-const DESCRIPTION = `Replace exact text in one file with encoding awareness.
+export const DESCRIPTION = `Replace exact text in one file with encoding awareness.
 
 This is the encoding-aware variant of the built-in edit tool. It behaves identically (exact matching, params, error messages, output) but decodes/writes the file in its original encoding (GBK, GB18030, Big5, Shift_JIS, UTF-16, etc.) and BOM instead of forcing UTF-8, so non-UTF-8 source files are not corrupted.`
 
@@ -236,7 +238,15 @@ const locks = new Map<string, Promise<void>>()
 function withLock<T>(filePath: string, fn: () => T | Promise<T>): Promise<T> {
   const prev = locks.get(filePath) ?? Promise.resolve()
   const next = prev.then(fn, fn)
-  locks.set(filePath, next.catch(() => {}))
+  // Tail of the chain: resolve to void on both paths so later calls wait for
+  // this one without inheriting its rejection.
+  locks.set(
+    filePath,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  )
   return next
 }
 

@@ -1,11 +1,12 @@
 // Encoding-aware replacement for opencode's built-in `read` tool.
 //
-// Can be used in two ways:
+// Can be used in two ways (the V2 plugin entrypoint does NOT use this file —
+// V2 registers `src/v2/read.ts`, which mirrors the V2.0.12 built-in):
 //   1. As a standalone custom tool: drop this file into `.opencode/tools/read.ts`
 //      and the filename registers it as the `read` tool (overrides built-in).
-//   2. As part of the encoding-guard-edit plugin: imported by `index.mjs` and
-//      registered via `tool: { read }` in the plugin's returned hooks; per
-//      OpenCode docs, plugin tools shadow built-in tools of the same name.
+//   2. In an OpenCode V1 plugin: imported by the plugin entrypoint and
+//      registered via `tool: { read }` in the hooks returned from `server()`;
+//      per OpenCode docs, plugin tools shadow built-in tools of the same name.
 //
 // Faithfully mirrors the v1.17.0 release `read` (packages/core/src/tool/read.ts):
 // params `path`/`offset`/`limit`, directory listing, paged text reading with
@@ -18,14 +19,15 @@
 // files render correctly — which lets the model produce a matching `oldString`
 // for the companion `edit` tool instead of falling back to shell.
 //
-// See https://opencode.ai/docs/custom-tools/
+// See https://opencode.ai/v2/docs/build/plugins (V2) and
+// https://opencode.ai/docs/custom-tools/ (V1 standalone tools)
 
 import * as path from "node:path"
 import * as fs from "node:fs"
 import { createRequire } from "node:module"
 import { tool } from "@opencode-ai/plugin"
 
-const DESCRIPTION = `Read a text file or supported image, page through a large text file by line offset, or list a directory with encoding awareness.
+export const DESCRIPTION = `Read a text file or supported image, page through a large text file by line offset, or list a directory with encoding awareness.
 
 This is the encoding-aware variant of the built-in read tool. It behaves identically (params, paging, directory listing, image/binary handling) but decodes the file in its original encoding (GBK, GB18030, Big5, Shift_JIS, UTF-16, etc.) instead of assuming UTF-8, so non-UTF-8 source files render correctly.`
 
