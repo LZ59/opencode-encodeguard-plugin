@@ -1,0 +1,23 @@
+--- a/file-access.ts
++++ b/file-access.ts
+@@ -1,6 +1,5 @@
+ export * as FileAccess from "./file-access.js"
+ 
+-import { makeLocationNode } from "@opencode/util/effect/app-node"
+ import { FSUtil } from "@opencode/util/fs-util"
+ import { Global } from "@opencode/util/global"
+ import { Array, Context, Effect, Layer, Schema } from "effect"
+@@ -89,7 +88,7 @@
+   source: { type: "tool" as const, messageID: context.messageID, id: context.id },
+ })
+ 
+-const layer = Layer.effect(
++export const layer = Layer.effect(
+   Service,
+   Effect.gen(function* () {
+     const fs = yield* FSUtil.Service
+@@ -170,4 +169,3 @@
+   }),
+ )
+ 
+-export const node = makeLocationNode({ service: Service, layer, deps: [FSUtil.node, Location.node, Permission.node] })

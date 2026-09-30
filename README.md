@@ -51,6 +51,27 @@ npm install
 
 `src/v2/fs-util.ts` 是最小 `FSUtil.Service`：只实现 `stat` / `readDirectory` / `resolve` / `up`，错误用 `PlatformError.systemError({ _tag: "NotFound" | ... })` 构造，这样 `Effect.catchReason("PlatformError", "NotFound")` 能命中。
 
+## 与上游同步
+
+`scripts/vendor/` 描述 vendored 树的来源与改动，保证上游发版能被及时发现、机械地跟进：
+
+- `manifest.txt` —— 23 个文件的三分类清单，头部记录 `tag` / `commit`。
+  - `verbatim` 与上游逐字节一致，`sync` 直接覆盖
+  - `patched` = 上游原文 + `patches/<path>.patch`（机械补丁 + `ENCODING PATCH`）
+  - `shim` 不参与同步，本地文件为准，且必须带 `// Shim:` 标记
+- `patches/*.patch` —— 只有 4 个文件需要打补丁，用 `diff -u --label a/… b/…` 生成，格式稳定可再生。
+
+```bash
+scripts/vendor.sh status           # 当前 tag vs 上游最新 tag，逐文件列出变更
+scripts/vendor.sh sync <tag>       # 前移到 <tag>：覆盖 verbatim + 应用补丁，冲突则停下
+scripts/vendor.sh verify           # 离线校验：树 == 上游原文 + 补丁（抓本地漂移）
+scripts/vendor.sh patches          # 重新生成补丁
+```
+
+`sync` 会覆盖 `verbatim`、给 `patched` 打补丁、`shim` 一律不动，然后自动跑 `verify` + `typecheck` + `smoke`。补丁打不上就以 `CONFLICT <path>` 中止并把该文件留成上游原文，冲突因此总是显式暴露而不是悄悄错位。
+
+`.github/workflows/upstream.yml` 每周比对一次 `sst/opencode` 的最新 tag，落后就把整份 diff 写进 job summary 并让 CI 变红。
+
 ## 编码感知（`ENCODING PATCH`）
 
 对齐是尽力而为，UTF-8 文件与官方完全一致；非 UTF-8 文件保留原编码、BOM 和 CRLF/LF。差异只在 I/O 边界：
@@ -116,6 +137,12 @@ opencode-encodeguard-plugin/
 │       ├── fs-util.ts              # 最小 FSUtil.Service（stat / readDirectory / resolve / up）
 │       └── upstream/               # 上游 v2.0.12 源码 + shim（见「实现结构」表格）
 ├── test/smoke.ts                   # bun 冒烟测试（注册、输入校验、GBK/UTF-16 读写、分页、二进制）
+├── scripts/
+│   ├── vendor.sh                    # 上游同步：status / sync <tag> / verify / patches
+│   └── vendor/
+│       ├── manifest.txt             # 23 个 vendored 文件的 verbatim|patched|shim 清单 + 来源 tag
+│       └── patches/                 # 4 份补丁（机械 + ENCODING PATCH）
+├── .github/workflows/upstream.yml   # 每周比对 sst/opencode 最新 tag，落后即报错
 ├── opencode.json                   # 本仓库自测配置（"plugins": ["./"]）
 ├── tsconfig.json
 └── package.json

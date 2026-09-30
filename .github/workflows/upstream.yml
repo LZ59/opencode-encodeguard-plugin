@@ -1,0 +1,41 @@
+name: upstream
+
+# Watches sst/opencode for releases newer than the tag recorded in
+# scripts/vendor/manifest.txt, and fails with a per-file diff of the vendored
+# sources so a bump never goes unnoticed.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare vendored sources against the latest release
+        run: |
+          set -euo pipefail
+          report="$(mktemp)"
+          ./scripts/vendor.sh status | tee "$report"
+
+          {
+            echo "## opencode upstream"
+            echo
+            echo '```'
+            cat "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          recorded="$(grep -m1 '^# tag:' scripts/vendor/manifest.txt | awk '{ print $3 }')"
+          latest="$(grep -m1 '^latest:' "$report" | awk '{ print $2 }')"
+
+          if [ "$recorded" != "$latest" ]; then
+            echo "::error::vendored sources are behind upstream: $recorded -> $latest. Run: scripts/vendor.sh sync $latest"
+            exit 1
+          fi

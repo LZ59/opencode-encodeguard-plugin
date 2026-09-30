@@ -1,0 +1,12 @@
+--- a/environment/index.ts
++++ b/environment/index.ts
+@@ -14,8 +14,7 @@
+ } from "./files.js"
+ export { execDefaults } from "./exec-defaults.js"
+ export { makeLocalDriver } from "./local.js"
+-export { makeMemoryDriver, type MemoryDriver } from "./memory.js"
+-export { type Interface, node, Service } from "./environment.js"
++export { type Interface, Service } from "./environment.js"
+ 
+ import type { Driver } from "./driver.js"
+ import { execDefaults } from "./exec-defaults.js"

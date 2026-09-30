@@ -1,0 +1,66 @@
+--- a/tool/read-filesystem.ts
++++ b/tool/read-filesystem.ts
+@@ -2,7 +2,6 @@
+ 
+ import path from "path"
+ import { pathToFileURL } from "url"
+-import { makeLocationNode } from "@opencode/util/effect/app-node"
+ import { Context, Effect, Layer, Schema } from "effect"
+ import { lookup } from "mime-types"
+ import { Environment } from "../environment/index.js"
+@@ -10,6 +9,8 @@
+ import { FileSystem } from "../filesystem.js"
+ import { Mime } from "../mime.js"
+ import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema.js"
++// ENCODING PATCH: transcode non-UTF-8 text to UTF-8 before upstream's byte paging.
++import { decodeRaw, detectEncoding, isPlausibleText } from "../../../encoding.ts"
+ 
+ export const MAX_READ_LINES = 2_000
+ export const MAX_READ_BYTES = 50 * 1024
+@@ -119,7 +120,7 @@
+   resource: string,
+   page: PageInput = {},
+ ) {
+-  const first = yield* files.read(input, { offset: 0, length: FIRST_CHUNK }).pipe(
++  let first = yield* files.read(input, { offset: 0, length: FIRST_CHUNK }).pipe(
+     Effect.catchTag("Environment.WrongKind", (error) => {
+       if (error.actual !== "directory")
+         return Effect.fail(new PathKindError({ resource, expected: "a file or directory" }))
+@@ -148,6 +149,23 @@
+     }
+   }
+ 
++  // ENCODING PATCH: begin — decode non-UTF-8 text into a UTF-8 buffer so the
++  // byte-level paging/binary logic below runs on real character offsets.
++  // Media (above) and "Binary" (null-bearing, non-UTF-16/32) stay untouched so
++  // magic-byte detection and upstream's binary rejection still see raw bytes.
++  const detected = detectEncoding(first.bytes)
++  if (detected !== "UTF-8" && detected !== "Binary") {
++    const whole = yield* readFile(files, input, resource)
++    const decoded = decodeRaw(whole.bytes)
++    if (!decoded.text.includes("\u0000") && isPlausibleText(decoded.text)) {
++      const utf8 = new TextEncoder().encode(decoded.text)
++      // Complete buffer: `bytes.length >= info.size` routes to upstream's
++      // single-shot path, skipping the rope (whose offsets are byte-based).
++      first = { info: { ...whole.info, size: utf8.length }, bytes: utf8 }
++    }
++  }
++  // ENCODING PATCH: end
++
+   const paged = first.info.size > MAX_READ_BYTES || page.offset !== undefined || page.limit !== undefined
+   if (!paged) {
+     if (first.bytes.includes(0)) return yield* new BinaryFileError({ resource })
+@@ -375,7 +393,7 @@
+   }
+ }
+ 
+-const layer = Layer.effect(
++export const layer = Layer.effect(
+   Service,
+   Effect.gen(function* () {
+     const environment = yield* Environment.Service
+@@ -386,4 +404,3 @@
+   }),
+ )
+ 
+-export const node = makeLocationNode({ service: Service, layer, deps: [Environment.node] })

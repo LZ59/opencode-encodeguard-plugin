@@ -1,0 +1,79 @@
+--- a/file-mutation.ts
++++ b/file-mutation.ts
+@@ -1,6 +1,5 @@
+ export * as FileMutation from "./file-mutation.js"
+ 
+-import { makeLocationNode } from "@opencode/util/effect/app-node"
+ import { Context, Effect, Layer } from "effect"
+ import { KeyedMutex } from "./effect/keyed-mutex.js"
+ import { FSUtil } from "@opencode/util/fs-util"
+@@ -8,6 +7,8 @@
+ import { Environment } from "./environment/index.js"
+ import type { Files } from "./environment/index.js"
+ import type { FileAccess } from "./file-access.js"
++// ENCODING PATCH: decode/encode in the file's own charset instead of UTF-8 only.
++import { decodeRaw, encodeFile } from "../../encoding.ts"
+ 
+ export type Target = Pick<FileAccess.Target, "absolute" | "resource">
+ 
+@@ -43,7 +44,25 @@
+ export class Service extends Context.Service<Service, Interface>()("@opencode/FileMutation") {}
+ 
+ export const readText = Effect.fn("FileMutation.readText")(function* (files: Files, target: string) {
+-  return Bom.decodeBytes((yield* files.read(target)).bytes)
++  // ENCODING PATCH: upstream is `Bom.decodeBytes(...)`, UTF-8 only. Decode in
++  // the file's own charset instead; the BOM flag still drives the write-back.
++  const decoded = decodeRaw((yield* files.read(target)).bytes)
++  return { bom: decoded.bom, text: decoded.text }
++})
++
++/** ENCODING PATCH: encode text back into the charset already on disk. */
++export const encodeText = Effect.fn("FileMutation.encodeText")(function* (
++  files: Files,
++  target: string,
++  text: string,
++) {
++  const current = yield* files.read(target, { offset: 0, length: 4 }).pipe(
++    Effect.map((result) => result.bytes),
++    Effect.orElseSucceed(() => undefined),
++  )
++  const encoding = current === undefined ? "UTF-8" : decodeRaw(current).encoding
++  const split = Bom.split(text)
++  return encodeFile(split.text, split.bom, encoding)
+ })
+ 
+ export const syncTextBom = Effect.fn("FileMutation.syncTextBom")(function* (
+@@ -63,7 +82,7 @@
+  * Mutation locking is process-local and serializes cooperating OpenCode
+  * changes; external writes can still race.
+  */
+-const layer = Layer.effect(
++export const layer = Layer.effect(
+   Service,
+   Effect.gen(function* () {
+     const environment = yield* Environment.Service
+@@ -91,9 +110,14 @@
+             Effect.as(true),
+             Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
+           )
++          // ENCODING PATCH: re-encode into the charset already on disk instead
++          // of forcing UTF-8. `content` may carry a leading U+FEFF (edit.ts
++          // runs Bom.join first); that flag selects the target BOM bytes.
+           yield* environment.files.write(
+             input.target.absolute,
+-            typeof input.content === "string" ? new TextEncoder().encode(input.content) : input.content,
++            typeof input.content === "string"
++              ? yield* encodeText(environment.files, input.target.absolute, input.content)
++              : input.content,
+           )
+           return writeResult(input.target, existed)
+         }),
+@@ -121,8 +145,6 @@
+   }),
+ )
+ 
+-export const node = makeLocationNode({ service: Service, layer, deps: [Environment.node] })
+-
+ /**
+  * Deferred until the corresponding integrations exist.
+  */

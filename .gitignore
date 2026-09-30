@@ -4,3 +4,6 @@ node_modules/
 
 # OpenCode local config + build artifacts
 .opencode/
+
+# vendored-upstream helper cache (scripts/vendor.sh)
+scripts/vendor/.cache/
