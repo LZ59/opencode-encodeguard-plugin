@@ -1,9 +1,9 @@
 // Encoding-aware file I/O, factored out for unit testing.
 //
-// This is the canonical implementation of the encoding detection + codec logic
-// that `tools/edit.ts` and `tools/read.ts` inline (those tools must stay
-// self-contained so opencode's tool loader can resolve them without relative
-// `.ts` imports). Keep this file in sync with the inlined copies.
+// This is the canonical implementation of the encoding detection + codec logic.
+// The vendored V2 sources reach it through the `ENCODING PATCH` hunks in
+// `src/v2/upstream/file-mutation.ts` and `src/v2/upstream/tool/read-filesystem.ts`
+// (`decodeRaw` is the bytes-flavoured entry point they use).
 
 import * as fs from "node:fs"
 import { createRequire } from "node:module"
@@ -154,6 +154,33 @@ export function decodeFile(filePath: string): EncodedFile {
   const encoding = bom && bom.name === "UTF-8" ? "UTF-8 BOM" : detected
   const text = decodeBytes(data, detected)
   return { bom: bom !== null, content: raw, text, encoding }
+}
+
+// Bytes-flavoured twin of decodeFile(), for callers that already hold the raw
+// file bytes instead of a path (the vendored V2 sources read through the
+// Environment seam rather than node:fs).
+export function decodeRaw(raw: Uint8Array): { bom: boolean; text: string; encoding: string } {
+  const bom = detectBom(raw)
+  const data = bom ? raw.subarray(bom.length) : raw
+  const detected = bom ? bom.name : detectEncoding(raw)
+  const encoding = bom && bom.name === "UTF-8" ? "UTF-8 BOM" : detected
+  return { bom: bom !== null, text: decodeBytes(data, detected), encoding }
+}
+
+// Mirrors `Mime.isText`'s control-character budget over *decoded* text: a blob
+// that only decodes because the charset was guessed (arbitrary bytes that
+// happen to satisfy a UTF-16 pattern) must not be promoted to text. C1
+// controls (U+0080-U+009F) and U+FFFD count too — without them a handful of
+// C0 controls in a short decode slips under any useful threshold.
+export function isPlausibleText(text: string): boolean {
+  if (text.length === 0) return true
+  let implausible = 0
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0
+    const control = code < 9 || (code > 13 && code < 32)
+    if (control || (code >= 0x80 && code <= 0x9f) || code === 0xfffd) implausible++
+  }
+  return implausible / text.length <= 0.3
 }
 
 export function encodeFile(text: string, bom: boolean, encoding: string): Uint8Array {

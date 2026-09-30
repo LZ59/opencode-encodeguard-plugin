@@ -1,0 +1,156 @@
+export * as FileMutation from "./file-mutation.js"
+
+import { Context, Effect, Layer } from "effect"
+import { KeyedMutex } from "./effect/keyed-mutex.js"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Bom } from "@opencode/util/bom"
+import { Environment } from "./environment/index.js"
+import type { Files } from "./environment/index.js"
+import type { FileAccess } from "./file-access.js"
+// ENCODING PATCH: decode/encode in the file's own charset instead of UTF-8 only.
+import { decodeRaw, encodeFile } from "../../encoding.ts"
+
+export type Target = Pick<FileAccess.Target, "absolute" | "resource">
+
+export interface WriteInput {
+  readonly target: Target
+  readonly content: string | Uint8Array
+}
+
+export interface TextWriteInput {
+  readonly target: Target
+  readonly content: string
+}
+
+export interface WriteResult {
+  readonly operation: "write"
+  readonly target: string
+  readonly resource: string
+  readonly existed: boolean
+}
+
+export interface Interface {
+  /** Serialize a complete read/prepare/write mutation transaction by resolved path. */
+  readonly withLock: (
+    targets: ReadonlyArray<string>,
+  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  readonly write: (input: WriteInput) => Effect.Effect<WriteResult, Environment.Failed>
+  /** Write text while retaining an existing UTF-8 BOM and emitting at most one BOM. */
+  readonly writeTextPreservingBom: (
+    input: TextWriteInput,
+  ) => Effect.Effect<WriteResult, Environment.WrongKind | Environment.Failed>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/FileMutation") {}
+
+export const readText = Effect.fn("FileMutation.readText")(function* (files: Files, target: string) {
+  // ENCODING PATCH: upstream is `Bom.decodeBytes(...)`, UTF-8 only. Decode in
+  // the file's own charset instead; the BOM flag still drives the write-back.
+  const decoded = decodeRaw((yield* files.read(target)).bytes)
+  return { bom: decoded.bom, text: decoded.text }
+})
+
+/** ENCODING PATCH: encode text back into the charset already on disk. */
+export const encodeText = Effect.fn("FileMutation.encodeText")(function* (
+  files: Files,
+  target: string,
+  text: string,
+) {
+  const current = yield* files.read(target, { offset: 0, length: 4 }).pipe(
+    Effect.map((result) => result.bytes),
+    Effect.orElseSucceed(() => undefined),
+  )
+  const encoding = current === undefined ? "UTF-8" : decodeRaw(current).encoding
+  const split = Bom.split(text)
+  return encodeFile(split.text, split.bom, encoding)
+})
+
+export const syncTextBom = Effect.fn("FileMutation.syncTextBom")(function* (
+  files: Files,
+  target: string,
+  bom: boolean,
+) {
+  const synced = Bom.syncBytes((yield* files.read(target)).bytes, bom)
+  if (synced.bytes) yield* files.write(target, synced.bytes)
+  return synced.text
+})
+
+/** Share transaction locks across Location graphs that address the same file. */
+const transactionLocks = KeyedMutex.makeUnsafe<string>()
+
+/**
+ * Mutation locking is process-local and serializes cooperating OpenCode
+ * changes; external writes can still race.
+ */
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const environment = yield* Environment.Service
+    const locks = KeyedMutex.makeUnsafe<string>()
+    const withLock: Interface["withLock"] = (targets) => (effect) =>
+      [...new Set(targets.map(FSUtil.resolve))]
+        .sort()
+        .reduceRight((result, target) => transactionLocks.withLock(target)(result), effect)
+    const withTargetLock =
+      (target: Target) =>
+      <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        locks.withLock(target.absolute)(Effect.uninterruptible(effect))
+
+    const writeResult = (target: Target, existed: boolean): WriteResult => ({
+      operation: "write",
+      target: target.absolute,
+      resource: target.resource,
+      existed,
+    })
+
+    const write = Effect.fn("FileMutation.write")((input: WriteInput) =>
+      withTargetLock(input.target)(
+        Effect.gen(function* () {
+          const existed = yield* environment.files.stat(input.target.absolute).pipe(
+            Effect.as(true),
+            Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
+          )
+          // ENCODING PATCH: re-encode into the charset already on disk instead
+          // of forcing UTF-8. `content` may carry a leading U+FEFF (edit.ts
+          // runs Bom.join first); that flag selects the target BOM bytes.
+          yield* environment.files.write(
+            input.target.absolute,
+            typeof input.content === "string"
+              ? yield* encodeText(environment.files, input.target.absolute, input.content)
+              : input.content,
+          )
+          return writeResult(input.target, existed)
+        }),
+      ),
+    )
+
+    const writeTextPreservingBom = Effect.fn("FileMutation.writeTextPreservingBom")((input: TextWriteInput) =>
+      withTargetLock(input.target)(
+        Effect.gen(function* () {
+          const next = Bom.split(input.content)
+          const current = yield* environment.files.read(input.target.absolute, { offset: 0, length: 3 }).pipe(
+            Effect.map((result) => result.bytes),
+            Effect.catchTag("Environment.NotFound", () => Effect.undefined),
+          )
+          yield* environment.files.write(
+            input.target.absolute,
+            new TextEncoder().encode(Bom.join(next.text, Boolean(current && Bom.has(current)) || next.bom)),
+          )
+          return writeResult(input.target, current !== undefined)
+        }),
+      ),
+    )
+
+    return Service.of({ withLock, write, writeTextPreservingBom })
+  }),
+)
+
+/**
+ * Deferred until the corresponding integrations exist.
+ */
+// TODO: Publish watcher/file-edit events after watcher integration exists.
+// TODO: Add snapshots / undo after snapshot design exists.
+// TODO: Notify LSP and collect diagnostics after LSP runtime exists.
+// TODO: Design multi-file transactions / rollback if patch needs atomic edits.
+// Until then, edits are sequential and report partial application.
+// TODO: Define crash recovery and idempotency for side effects between Tool.Called and durable settlement.

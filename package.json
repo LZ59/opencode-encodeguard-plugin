@@ -1,7 +1,7 @@
 {
   "name": "opencode-encodeguard-plugin",
   "version": "2.0.0",
-  "description": "OpenCode plugin that replaces the built-in edit/read tools with encoding-aware variants, so files in GBK, GB18030, Big5, Shift_JIS, UTF-16, etc. don't get mojibake'd. Works with OpenCode V2 and V1 (>= 1.18.29).",
+  "description": "OpenCode plugin that replaces the built-in edit/read tools with encoding-aware variants, so files in GBK, GB18030, Big5, Shift_JIS, UTF-16, etc. don't get mojibake'd. Built for OpenCode V2.",
   "license": "MIT",
   "type": "module",
   "main": "./opencode-encodeguard-plugin.ts",
@@ -9,17 +9,22 @@
     ".": "./opencode-encodeguard-plugin.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke": "bun test/smoke.ts"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.18.32",
-    "@opencode/plugin": "^2.0.12",
+    "@opencode/ai": "2.0.12",
+    "@opencode/plugin": "2.0.12",
+    "@opencode/schema": "2.0.12",
+    "@opencode/util": "2.0.12",
     "diff": "^9.0.0",
+    "effect": "4.0.0-rc.112",
     "iconv-lite": "^0.6.3",
     "mime-types": "^3.0.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/mime-types": "^2.1.4",
     "typescript": "^5.9.0"
   }
 }

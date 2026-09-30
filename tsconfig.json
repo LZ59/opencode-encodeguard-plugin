@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["opencode-encodeguard-plugin.ts", "index.ts", "tools/**/*.ts", "src/**/*.ts"]
+  "include": ["opencode-encodeguard-plugin.ts", "index.ts", "src/**/*.ts"]
 }
