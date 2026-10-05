@@ -11,7 +11,9 @@
 //   3. re-registers those payloads with the host, converting each Effect
 //      schema to a plain JSON Schema on *this* effect instance (the host's
 //      `effect` is a different module instance, so Effect schemas must never
-//      cross that boundary) and wrapping `execute` so it returns a promise.
+//      cross that boundary), wrapping `execute` so it returns a promise, and
+//      returning `output` as plain JSON because the host now validates it
+//      with `Schema.Json` rather than with upstream's own schema.
 //
 // Everything downstream of step 2 — tool descriptions, input/output shapes,
 // option flags, and the edit/read logic itself — is upstream's code, unmodified.
@@ -134,6 +136,18 @@ const toJsonSchema = (schema: Schema.Top): JsonSchema.JsonSchema => {
   ) as JsonSchema.JsonSchema
 }
 
+// Upstream declares `output` as an Effect `Schema`, so the host runs it through
+// `Schema.encodeEffect`, which accepts a class instance. We hand over a plain
+// JSON Schema instead, so `encodeOutput` falls through to
+// `Schema.decodeUnknownEffect(Schema.Json)` — and that only accepts values
+// whose prototype is `Object.prototype`. Upstream's `TextPage`/`ListPage` are
+// class instances, so any paged or directory read died with
+// "Expected JSON value" (`FileContent` passed only because it is an object
+// literal). Re-serialising yields exactly the value the host accepts, and drops
+// the same `undefined` members `Schema.encodeEffect` would omit.
+const toPlainJson = <A>(value: A): A =>
+  value === undefined ? value : (JSON.parse(JSON.stringify(value)) as A)
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -200,9 +214,11 @@ export async function register(ctx: Plugin.Context): Promise<void> {
       // Re-read the session's location for this call; the upstream services
       // observe it through `Location.Interface`'s getters.
       locationSlot.info = await resolveLocation(ctx, context.sessionID)
-      return Effect.runPromise(
+      const result = await Effect.runPromise(
         tool.execute(rawInput, toToolContext(context)) as Effect.Effect<Tool.Result, Tool.Error>,
       )
+      if (result.output === undefined) return result
+      return { ...result, output: toPlainJson(result.output) }
     },
   }))
 

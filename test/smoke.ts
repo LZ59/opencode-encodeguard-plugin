@@ -147,6 +147,24 @@ const check = (label, ok, detail) => {
   if (!ok) failures.push(label)
 }
 
+// The host validates a plain-object `output` schema with `Schema.Json`, which
+// only accepts values whose prototype is `Object.prototype`. Upstream's
+// `TextPage`/`ListPage` are class instances (`FileContent` is an object
+// literal), so if the bridge stops returning plain JSON the host rejects the
+// tool with "Expected JSON value" — exactly what happened in a real session
+// when a read used `limit`. `FileContent` passing alone hides the bug, so this
+// checks the paged and directory shapes too.
+const checkOutput = (label, result) => {
+  const out = result?.result?.output
+  if (out === undefined) return check(label, false, "tool returned no output")
+  try {
+    Effect.runSync(Schema.decodeUnknownEffect(Schema.Json)(out))
+    check(label, true, `type=${out.type} proto=${Object.getPrototypeOf(out)?.constructor?.name}`)
+  } catch (error) {
+    check(label, false, error?.message ?? String(error))
+  }
+}
+
 // --- input schema -----------------------------------------------------------
 check("read requires path", !validate(byName.read, {}) && validate(byName.read, { path: "x" }))
 check("read accepts limit=2000", validate(byName.read, { path: "x", limit: 2000 }))
@@ -168,6 +186,7 @@ const readSmall = await callTool(byName.read, { path: gbkPath })
 const readText = textPage(readSmall)
 check("read GBK small file", readSmall.ok && readText.includes("1: 第一行：中文 GBK 文件"), readText?.slice(0, 120))
 check("read GBK is decoded (no mojibake)", readText !== undefined && !readText.includes("鐗"), readText?.slice(0, 80))
+checkOutput("read file output is plain JSON", readSmall)
 
 const readUtf8 = await callTool(byName.read, { path: utf8Path })
 check("read utf8 file", readUtf8.ok && textPage(readUtf8).includes("1: plain ascii/utf8 line"), textPage(readUtf8))
@@ -181,6 +200,7 @@ check(
   readBig.ok && textPage(readBig).includes("1: 第 1 行") && textPage(readBig).includes("3: 第 3 行"),
   textPage(readBig)?.slice(0, 200),
 )
+checkOutput("read paged output is plain JSON", readBig)
 const readBigOffset = await callTool(byName.read, { path: bigGbkPath, offset: 4998, limit: 5 })
 check(
   "read GBK paged (offset near EOF)",
@@ -217,6 +237,7 @@ check("read missing file", !readMissing.ok && /not found/i.test(readMissing.mess
 
 const readDir = await callTool(byName.read, { path: ROOT })
 check("read directory listing", readDir.ok && textPage(readDir).includes("Read directory"), textPage(readDir)?.slice(0, 120))
+checkOutput("read directory output is plain JSON", readDir)
 
 // --- edit -------------------------------------------------------------------
 const editGbk = await callTool(byName.edit, {
@@ -228,6 +249,7 @@ const gbkBytes = fs.readFileSync(gbkPath)
 const gbkAfter = iconv.decode(gbkBytes, "gbk")
 const gbkUtf8Probe = gbkBytes.toString("utf8")
 check("edit GBK succeeds", editGbk.ok, editGbk.message)
+checkOutput("edit output is plain JSON", editGbk)
 check(
   "edit GBK keeps GBK bytes",
   gbkAfter.includes("第二行：已经改过了") && !gbkUtf8Probe.includes("第二行：已经改过了"),
