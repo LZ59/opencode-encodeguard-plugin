@@ -40,6 +40,13 @@ fs.writeFileSync(utf16Path, Buffer.concat([Buffer.from([0xff, 0xfe]), u16]))
 const bigGbkText = Array.from({ length: 5000 }, (_, i) => `第 ${i + 1} 行是中文内容用于分页测试`).join("\n") + "\n"
 fs.writeFileSync(bigGbkPath, iconv.encode(bigGbkText, "gbk"))
 
+// 21 chars/line, so 2000 lines (~44 KB) fits inside the 50 KiB page budget while
+// 2001+ would not be reached by the byte limiter — isolating the 2000-line clamp.
+const bigAsciiPath = path.join(ROOT, "big-ascii.txt")
+const bigAsciiText =
+  Array.from({ length: 5000 }, (_, i) => `line-${String(i + 1).padStart(5, "0")}-abcdefghij`).join("\n") + "\n"
+fs.writeFileSync(bigAsciiPath, bigAsciiText)
+
 fs.writeFileSync(binPath, Buffer.from([0x00, 0x01, 0x02, 0x03, 0x00, 0xff, 0x00, 0x99]))
 
 function stripBom(text) {
@@ -143,9 +150,15 @@ const check = (label, ok, detail) => {
 // --- input schema -----------------------------------------------------------
 check("read requires path", !validate(byName.read, {}) && validate(byName.read, { path: "x" }))
 check("read accepts limit=2000", validate(byName.read, { path: "x", limit: 2000 }))
-check("read rejects limit=2001", !validate(byName.read, { limit: 2001 }), issues(byName.read, { limit: 2001 }))
-check("read rejects limit=3000", !validate(byName.read, { limit: 3000 }), issues(byName.read, { limit: 3000 }))
-check("read rejects offset=-1", !validate(byName.read, { offset: -1 }), issues(byName.read, { offset: -1 }))
+// Upstream dropped `Schema.isLessThanOrEqualTo(MAX_READ_LINES)` from PageInput
+// (the cap moved to runtime `Math.min(limit, MAX_READ_LINES)`), so the schema
+// now admits an over-limit value instead of rejecting it.
+check("read schema admits limit=3000", validate(byName.read, { path: "x", limit: 3000 }))
+check(
+  "read rejects offset=-1",
+  !validate(byName.read, { path: "x", offset: -1 }),
+  issues(byName.read, { path: "x", offset: -1 }),
+)
 check("edit accepts required", validate(byName.edit, { path: "a", oldString: "b", newString: "c" }))
 check("edit rejects missing newString", !validate(byName.edit, { path: "a", oldString: "b" }))
 check("read input has no $ref", !JSON.stringify(byName.read.input).includes("$ref"), JSON.stringify(byName.read.input))
@@ -173,6 +186,27 @@ check(
   "read GBK paged (offset near EOF)",
   readBigOffset.ok && textPage(readBigOffset).includes("4998:"),
   textPage(readBigOffset)?.slice(0, 200),
+)
+
+// The schema no longer caps `limit`, so the 2000-line ceiling has to come from
+// the runtime clamp. big-ascii.txt has 5000 short lines: the 50 KiB page budget
+// alone would allow ~2300 of them, so stopping at exactly 2000 isolates the
+// `Math.min(limit, MAX_READ_LINES)` clamp.
+const readClamp = await callTool(byName.read, { path: bigAsciiPath, limit: 5000 })
+const clampText = textPage(readClamp) ?? ""
+const clampLines = (clampText.match(/^\d+: /gm) ?? []).length
+check(
+  "read clamps limit=5000 down to 2000 lines",
+  readClamp.ok && clampLines === 2000 && !/(?:^|\n)2001: /.test(clampText),
+  `ok=${readClamp.ok} numbered-lines=${clampLines} tail=${JSON.stringify(clampText.slice(-70))}`,
+)
+
+// Upstream (v2.0.13+) appends the file's line count to this message.
+const readBadOffset = await callTool(byName.read, { path: gbkPath, offset: 9999 })
+check(
+  "read out-of-range offset reports the line count",
+  !readBadOffset.ok && /out of range for this file \(3 lines\)/.test(readBadOffset.message ?? ""),
+  readBadOffset.message,
 )
 
 const readBin = await callTool(byName.read, { path: binPath })

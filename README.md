@@ -38,7 +38,7 @@ npm install
 
 ## 实现结构：vendor 上游 + 最小补丁 + shim
 
-`src/v2/upstream/` 按 `@opencode/core` v2.0.12 的 `packages/core/src` 相对导入图搬运，`.js` 后缀导入名保留（bun 直接把 `.js` 解析到 `.ts`；NodeNext 的 typecheck 也能解析）。对照 `/opencode-2.0.12` 逐文件 diff，改动分四类：
+`src/v2/upstream/` 按 `@opencode/core` v2.0.23 的 `packages/core/src` 相对导入图搬运，`.js` 后缀导入名保留（bun 直接把 `.js` 解析到 `.ts`；NodeNext 的 typecheck 也能解析）。对照 `sst/opencode` 同一 tag 的 `packages/core/src` 逐文件 diff，改动分四类：
 
 | 类别 | 文件 |
 | --- | --- |
@@ -86,7 +86,7 @@ scripts/vendor.sh patches          # 重新生成补丁
 
 ## 覆盖的工具
 
-`edit` / `read` 都被替换，描述与参数说明与 v2.0.12 内置完全一致（`File to edit` / `Exact text to find and replace` 等）。
+`edit` / `read` 都被替换，描述与参数说明与 v2.0.23 内置完全一致（`File to edit` / `Exact text to find and replace` 等）。
 
 ### `edit`（源：`src/v2/upstream/tool/plugin/edit.ts`）
 
@@ -101,11 +101,11 @@ scripts/vendor.sh patches          # 重新生成补丁
 
 - `options: { codemode: false }`（权限按工具名回退到 `read`）。
 - 三态结构化输出：小文件（≤ 50 KiB 且未传 `offset`/`limit`）整读为 `{ type: "file", encoding: "utf8" }`；分页读取为 `{ type: "text-page", content, mime, offset, truncated, next? }`；目录为 `{ type: "list-page", entries, truncated, next? }`。
-- 分页规则对齐：单页 50 KiB 字节上限、2000 行上限、单行超 2000 字符截断并追加 `... (line truncated to 2000 chars)`、CR 剥离、`limit` 上限 2000。
+- 分页规则对齐：单页 50 KiB 字节上限、2000 行上限、单行超 2000 字符截断并追加 `... (line truncated to 2000 chars)`、CR 剥离、`limit` 运行时按 2000 截断。上游自 v2.0.13 起移除了 Schema 上的 `maximum: 2000`（描述改为 “defaults to and capped at 2000”），所以超限值在 Schema 层被接受、由 `Math.min(limit, MAX_READ_LINES)` 收敛；单页仍受 50 KiB 字节预算约束，两者取先到者。
 - 模型内容格式对齐：`Read file <path>, lines A-B` + `N: line` 行号前缀 + `[Output truncated. Continue reading with offset: N]`；目录为 `Read directory ...` + 每行 `entry.path`。
 - 媒体检测对齐上游 `Mime.detect`（magic bytes 而非扩展名）：png / jpeg / gif / webp / pdf 返回 base64 file part + `Image read successfully` / `PDF read successfully`，超 20 MiB 报 `Media exceeds ... byte ingestion limit: ...`。
 - 目录排序对齐：目录在前、组内 `localeCompare`，目录名带尾部分隔符。
-- 报错逐字对齐：`File not found: ...`（含 `Did you mean one of these?` 建议，大小写不敏感包含匹配、最多 3 条）、`Cannot read binary file: ...`、`Offset N is out of range`、`Path is not a file or directory: ...`、`Unable to read ...`。
+- 报错逐字对齐：`File not found: ...`（含 `Did you mean one of these?` 建议，大小写不敏感包含匹配、最多 3 条）、`Cannot read binary file: ...`、`Offset N is out of range for this file (M lines)`（v2.0.13 起附带行数）、`Path is not a file or directory: ...`、`Unable to read ...`。
 - 文件名恢复对齐：请求名中的普通空格 ↔ 实际文件名中的 NBSP / 窄 NBSP 自动回退。
 - `metadata` 对齐：`{ truncated }`。
 
@@ -135,7 +135,7 @@ opencode-encodeguard-plugin/
 │   └── v2/
 │       ├── bridge.ts               # 建层 → 捕获上游 payload → JSON Schema → 重新注册 + execute 桥接
 │       ├── fs-util.ts              # 最小 FSUtil.Service（stat / readDirectory / resolve / up）
-│       └── upstream/               # 上游 v2.0.12 源码 + shim（见「实现结构」表格）
+│       └── upstream/               # 上游 v2.0.23 源码 + shim（见「实现结构」表格）
 ├── test/smoke.ts                   # bun 冒烟测试（注册、输入校验、GBK/UTF-16 读写、分页、二进制）
 ├── scripts/
 │   ├── vendor.sh                    # 上游同步：status / sync <tag> / verify / patches
@@ -150,7 +150,7 @@ opencode-encodeguard-plugin/
 
 ## 依赖
 
-运行时（`dependencies`）：`@opencode/{ai,plugin,schema,util}@2.0.12`（类型 + 上游导入面）、`effect@4.0.0-rc.112`（与宿主同版本，必须精确锁定）、`iconv-lite`（编码转换）、`diff`（patch/统计）、`mime-types`（文本输出 mime，与上游同一查询）。
+运行时（`dependencies`）：`@opencode/{ai,plugin,schema,util}@2.0.23`（类型 + 上游导入面）、`effect@4.0.0-rc.112`（与宿主同版本，必须精确锁定）、`iconv-lite`（编码转换）、`diff`（patch/统计）、`mime-types`（文本输出 mime，与上游同一查询）。
 
 开发（`devDependencies`）：`typescript`、`@types/node`、`@types/mime-types`。
 
@@ -159,9 +159,9 @@ opencode-encodeguard-plugin/
 
 ## 验证
 
-已实测环境：OpenCode **v2.0.12**（bun），effect **4.0.0-rc.112**。
+源码与依赖：`@opencode/*` **2.0.23**、effect **4.0.0-rc.112**（上游 v2.0.23 仍锁定同一 rc，无需改动）。
 
 1. `npm run typecheck` 通过。
-2. `npm run smoke` 全过：注册出且仅 `edit` / `read`；输入是普通 JSON Schema（无 `$ref`）；`limit=2000` 收、`2001` / `3000` / `offset=-1` 拒；必填字段生效；GBK / UTF-16 读取正确解码；GBK 分页（`limit=3`、`offset=4998`）；二进制拒绝；目录列表；GBK 编辑后落盘仍是 GBK 字节；UTF-16 编辑后仍是 `FF FE` + `utf16le`；缺文件 / 找不到 oldString / 相同字符串三类报错文案。
-3. 真实 opencode v2.0.12 加载：`opencode run --standalone` 日志出现 `msg="loading plugin" id=... entrypoint=file:///.../index.ts` 且无报错，随后为每个 vendored `.ts` 注册 watcher——说明 `.js` → `.ts` 模块解析成功。
-4. 宿主内注册与覆盖：在 `setup()` 里临时调 `ctx.tool.list()`，对比 `transform` 前后快照——`before` 的 `edit` / `read` 的 `input` 是 Effect Schema，`after` 的 `name` / `input` / `options` 与本插件注册的 payload **完全一致**，证明宿主确实用本插件覆盖了内建同名工具。
+2. `npm run smoke` 全过（29 项）：注册出且仅 `edit` / `read`；输入是普通 JSON Schema（无 `$ref`）；必填字段生效、`offset=-1` 被拒；`limit` 已无 Schema 上限，`limit=5000` 由运行时截到恰好 2000 行；GBK / UTF-16 读取正确解码；GBK 分页（`limit=3`、`offset=4998`）；越界 offset 报 `out of range for this file (3 lines)`；二进制拒绝；目录列表；GBK 编辑后落盘仍是 GBK 字节；UTF-16 编辑后仍是 `FF FE` + `utf16le`；缺文件 / 找不到 oldString / 相同字符串三类报错文案。
+3. 真实 opencode **v2.0.23** 加载（用 `npx @opencode/cli@2.0.23`，不改动全局安装）：`opencode run --standalone` 日志出现 `msg="loading plugin" id=... entrypoint=file:///.../index.ts`，且没有任何插件相关报错——说明 `.js` → `.ts` 模块解析成功。
+4. 宿主内注册与覆盖（同样在 v2.0.23 下）：在 `setup()` 里临时调 `ctx.tool.list()`，对比 `transform` 前后快照——`before` 的 `edit` / `read` 的 `input` 是 Effect Schema，`after` 的 `name` / `input` / `options` 与本插件注册的 payload **完全一致**，证明宿主确实用本插件覆盖了内建同名工具。

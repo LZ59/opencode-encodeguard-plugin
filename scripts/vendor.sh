@@ -181,12 +181,26 @@ cmd_sync() {
   fi
 
   record_tag "$new" "$(commit_of "$new")"
-  rm -rf "$pristine"
 
   if [ "$conflict" = 1 ]; then
+    rm -rf "$pristine"
     note ""
     die "patches conflicted — resolve in $TREE, then run: scripts/vendor.sh patches"
   fi
+
+  # The committed patches were written against $old. Show what each patched
+  # file still contributes on top of $new — an upstream change that absorbed,
+  # moved or invalidated one of our hunks shows up here as a missing or
+  # relocated hunk — then rewrite the patch set against $new so verify agrees.
+  note ""
+  note "patched files, their delta from $new pristine:"
+  while IFS=$'\t' read -r _ path; do
+    [ -f "$pristine/$path" ] || continue
+    note "  $path"
+    changed_lines "$pristine/$path" "$TREE/$path"
+  done < <(rows | grep '^patched')
+  rm -rf "$pristine"
+  cmd_patches
 
   note ""
   note "synced to $new; verifying"

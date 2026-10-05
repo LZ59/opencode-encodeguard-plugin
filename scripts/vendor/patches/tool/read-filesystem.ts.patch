@@ -50,7 +50,7 @@
    const paged = first.info.size > MAX_READ_BYTES || page.offset !== undefined || page.limit !== undefined
    if (!paged) {
      if (first.bytes.includes(0)) return yield* new BinaryFileError({ resource })
-@@ -375,7 +393,7 @@
+@@ -388,7 +406,7 @@
    }
  }
  
@@ -59,7 +59,7 @@
    Service,
    Effect.gen(function* () {
      const environment = yield* Environment.Service
-@@ -386,4 +404,3 @@
+@@ -399,4 +417,3 @@
    }),
  )
  

@@ -13,10 +13,10 @@
     "smoke": "bun test/smoke.ts"
   },
   "dependencies": {
-    "@opencode/ai": "2.0.12",
-    "@opencode/plugin": "2.0.12",
-    "@opencode/schema": "2.0.12",
-    "@opencode/util": "2.0.12",
+    "@opencode/ai": "2.0.23",
+    "@opencode/plugin": "2.0.23",
+    "@opencode/schema": "2.0.23",
+    "@opencode/util": "2.0.23",
     "diff": "^9.0.0",
     "effect": "4.0.0-rc.112",
     "iconv-lite": "^0.6.3",
