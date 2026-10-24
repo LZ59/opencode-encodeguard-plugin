@@ -16,7 +16,7 @@
  
  export type Target = Pick<FileAccess.Target, "absolute" | "resource">
  
-@@ -43,7 +44,25 @@
+@@ -43,7 +44,27 @@
  export class Service extends Context.Service<Service, Interface>()("@opencode/FileMutation") {}
  
  export const readText = Effect.fn("FileMutation.readText")(function* (files: Files, target: string) {
@@ -33,7 +33,9 @@
 +  target: string,
 +  text: string,
 +) {
-+  const current = yield* files.read(target, { offset: 0, length: 4 }).pipe(
++  // ENCODING PATCH: detect on the whole file, not a 4-byte prefix — an ASCII
++  // prefix in a GBK file (e.g. `/**\n`) is valid UTF-8 and mis-detects.
++  const current = yield* files.read(target).pipe(
 +    Effect.map((result) => result.bytes),
 +    Effect.orElseSucceed(() => undefined),
 +  )

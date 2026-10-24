@@ -56,7 +56,9 @@ export const encodeText = Effect.fn("FileMutation.encodeText")(function* (
   target: string,
   text: string,
 ) {
-  const current = yield* files.read(target, { offset: 0, length: 4 }).pipe(
+  // ENCODING PATCH: detect on the whole file, not a 4-byte prefix — an ASCII
+  // prefix in a GBK file (e.g. `/**\n`) is valid UTF-8 and mis-detects.
+  const current = yield* files.read(target).pipe(
     Effect.map((result) => result.bytes),
     Effect.orElseSucceed(() => undefined),
   )
