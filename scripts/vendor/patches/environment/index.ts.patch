@@ -1,6 +1,6 @@
 --- a/environment/index.ts
 +++ b/environment/index.ts
-@@ -14,8 +14,7 @@
+@@ -15,8 +15,7 @@
  } from "./files.js"
  export { execDefaults } from "./exec-defaults.js"
  export { makeLocalDriver } from "./local.js"

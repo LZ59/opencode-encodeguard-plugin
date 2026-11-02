@@ -38,6 +38,8 @@ export type AssertInput = typeof AssertInput.Type
 
 export interface Interface {
   readonly assert: (input: AssertInput) => Effect.Effect<void>
+  /** Only used by `edit` to decide whether a miss hint may show file lines. */
+  readonly allows: (input: AssertInput) => Effect.Effect<boolean>
 }
 
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {

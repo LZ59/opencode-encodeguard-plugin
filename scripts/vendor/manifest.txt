@@ -1,7 +1,7 @@
 # vendored upstream tree manifest — consumed by scripts/vendor.sh
 # repo:   https://github.com/sst/opencode
-# tag:    v2.1.4
-# commit: 68bc26b7da1990ce10ffecfbc1e09eb13aa5d824
+# tag:    v2.2.5
+# commit: 9bbb8ce18c80f099e0e448775f59d965ead40a21
 #
 # verbatim  copied from packages/core/src as-is; local file must byte-match upstream
 # patched    copied, then scripts/vendor/patches/<path>.patch is applied

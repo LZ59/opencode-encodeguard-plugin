@@ -38,14 +38,14 @@ npm install
 
 ## 实现结构：vendor 上游 + 最小补丁 + shim
 
-`src/v2/upstream/` 按 `@opencode/core` v2.1.4 的 `packages/core/src` 相对导入图搬运，`.js` 后缀导入名保留（bun 直接把 `.js` 解析到 `.ts`；NodeNext 的 typecheck 也能解析）。对照 `sst/opencode` 同一 tag 的 `packages/core/src` 逐文件 diff，改动分四类：
+`src/v2/upstream/` 按 `@opencode/core` v2.2.5 的 `packages/core/src` 相对导入图搬运，`.js` 后缀导入名保留（bun 直接把 `.js` 解析到 `.ts`；NodeNext 的 typecheck 也能解析）。对照 `sst/opencode` 同一 tag 的 `packages/core/src` 逐文件 diff，改动分四类：
 
 | 类别 | 文件 |
 | --- | --- |
 | **原样搬运（diff = 0）** | `tool/plugin/edit.ts`、`tool/plugin/read.ts`、`tool/plugin/file-diff.ts`、`mime.ts`、`schema.ts`、`effect/keyed-mutex.ts`、`environment/{driver,exec-defaults,files,local}.ts` |
 | **机械补丁** | `file-access.ts`、`file-mutation.ts`、`tool/read-filesystem.ts`、`environment/index.ts`：删掉 `makeLocationNode` 导入与 `export const node`（那是宿主 app-node 图的装配，插件用不到），`const layer` → `export const layer`；`environment/index.ts` 另外裁掉 `memory.js` 导出 |
 | **`ENCODING PATCH` 标记的编码边界** | 见下节 |
-| **shim（宿主内部服务的最小替身）** | `environment/environment.ts`（只留 `{ files }`）、`filesystem.ts`（只留 `Content` schema）、`formatter.ts`（`file() => false`，tag `@opencode/v2/Formatter`）、`permission.ts`（`assert` 直通，补齐 `Error` 联合）、`location.ts`（`Interface = Location.Info`）、`project.ts`（只留纯函数 `root`）、`tool.ts`（只 re-export `Context`）、`session/instructions.ts`（`load` no-op）、`session/error.ts`（`NotFoundError`） |
+| **shim（宿主内部服务的最小替身）** | `environment/environment.ts`（只留 `{ files }`）、`filesystem.ts`（只留 `Content` schema）、`formatter.ts`（`file() => false`，tag `@opencode/v2/Formatter`）、`permission.ts`（`assert` 直通、`allows` 恒 `false`，补齐 `Error` 联合）、`location.ts`（`Interface = Location.Info`）、`project.ts`（只留纯函数 `root`）、`tool.ts`（只 re-export `Context`）、`session/instructions.ts`（`load` no-op）、`session/error.ts`（`NotFoundError`） |
 
 `src/v2/bridge.ts` 负责装配：建层 → 用 `Effect.all([EditTool.Plugin.effect(...), ReadTool.Plugin.effect(...)])` 在 `Effect.scoped` 里跑一遍并捕获 `editor.add` 的 payload → 把每个 Effect `Schema` 经 `Schema.toJsonSchemaDocument` 转成**普通 draft-2020-12 JSON Schema 对象**（绝不能把 Effect Schema 实例交出去，跨 effect 实例 `decodeUnknownEffect` 会失败）→ 用真实 `ctx.tool.transform` 重新注册 → `execute` 里 `Effect.runPromise` 把 Effect 桥回 Promise（宿主的 `executePromiseTool` 走 `Effect.promise`，所以拒绝会被包装成 `Tool.Error`，与内建工具同一出口），最后把 `output` 重新序列化成**纯 JSON 对象**。上游声明的 `output` 是 Effect Schema，宿主本会走 `Schema.encodeEffect`（能吃类实例）；我们换成普通 JSON Schema 后宿主改走 `Schema.decodeUnknownEffect(Schema.Json)`，而它只接受原型为 `Object.prototype` 的值——上游的 `TextPage` / `ListPage` 是类实例，少了这一步，任何带 `limit`/`offset` 的分页读取和目录列表都会以 `Expected JSON value` 失败（`FileContent` 恰好是对象字面量，所以不带分页参数时会侥幸通过，单测只测小文件就发现不了）。
 
@@ -86,14 +86,14 @@ scripts/vendor.sh patches          # 重新生成补丁
 
 ## 覆盖的工具
 
-`edit` / `read` 都被替换，描述与参数说明与 v2.1.4 内置完全一致（`File to edit` / `Exact text to find and replace` 等）。
+`edit` / `read` 都被替换，描述与参数说明与 v2.2.5 内置完全一致（`File to edit` / `Exact text to find and replace` 等）。
 
 ### `edit`（源：`src/v2/upstream/tool/plugin/edit.ts`）
 
 - `options: { codemode: false, permission: "edit" }`——权限在目录级门控，规则整体 deny 时工具在该目录被隐藏（例如 plan agent 的 edit deny）。
 - 三档匹配顺序：精确匹配 → Unicode 归一化匹配（智能引号 / 破折号 / NBSP 等宽度空格 1:1 归一化，偏移量仍指向原文）→ 行级回退（逐行 `trimEnd` + 归一化比较，支持行尾空白差异与整行跨度匹配）。匹配在 `Read` 展示给模型的 LF 视图上进行，命中后再把偏移映射回原文。
 - 行尾处理：替换文本按被匹配区域逐行沿用原行尾——原地改写的行沿用被替换行的换行，新增行用区域（回退到文件）的主导行尾，未触及区域的字节不变。仅当 `oldString` / `newString` 去掉 `\r` 后相同时才按精确字节编辑，用于显式修改行尾。
-- 报错逐字对齐：`File not found: ...`、`Path is a directory, not a file: ...`、`Could not find oldString in ...`、`Found N matches for oldString, ...`（`replaceAll` 提示）、`No changes to apply: ...`（含行尾未变与编辑后内容未变两种）、`oldString must not be empty. ...`。
+- 报错逐字对齐：`File not found: ...`、`Path is a directory, not a file: ...`、`Could not find oldString in ...`、`Found N matches for oldString, ...`（`replaceAll` 提示）、`No changes to apply: ...`（含行尾未变与编辑后内容未变两种）、`oldString must not be empty. ...`。v2.2.x 的「最近行」提示（`The closest lines in the file:`）在插件里不输出，见「已知差距」。
 - 输出对齐：`content` 为 `Edited <file> (N replacement(s))`（不附 diff 文本）；`output` / `metadata.files` 为 `{ file, patch, status, additions, deletions }`（`createTwoFilesPatch` + `diffLines` 统计）；路径在 location 内为 `/` 分隔的相对路径、外部为绝对路径。
 - 整个「读 → 匹配 → 写」按路径串行（对齐上游 `withLock`）。
 
@@ -105,7 +105,7 @@ scripts/vendor.sh patches          # 重新生成补丁
 - 模型内容格式对齐：`Read file <path>, lines A-B` + `N: line` 行号前缀 + `[Output truncated. Continue reading with offset: N]`；目录为 `Read directory ...` + 每行 `entry.path`。
 - 媒体检测对齐上游 `Mime.detect`（magic bytes 而非扩展名）：png / jpeg / gif / webp / pdf 返回 base64 file part + `Image read successfully` / `PDF read successfully`，超 20 MiB 报 `Media exceeds ... byte ingestion limit: ...`。
 - 目录排序对齐：目录在前、组内 `localeCompare`，目录名带尾部分隔符。
-- 报错逐字对齐：`File not found: ...`（含 `Did you mean one of these?` 建议，大小写不敏感包含匹配、最多 3 条）、`Cannot read binary file: ...`、`Offset N is out of range for this file (M lines)`（v2.0.13 起附带行数）、`Path is not a file or directory: ...`、`Unable to read ...`。
+- 报错逐字对齐：`File not found: ...`（含 `Did you mean one of these?` 建议，大小写不敏感包含匹配、最多 3 条；文件夹本身不存在时附带 `The folder ... does not exist. The nearest folder that does is ...`）、`Cannot read binary file: ...`、`Offset N is out of range for this file (M lines)`（v2.0.13 起附带行数）、`Path is not a file or directory: ...`、`Unable to read ...`。
 - 文件名恢复对齐：请求名中的普通空格 ↔ 实际文件名中的 NBSP / 窄 NBSP 自动回退。
 - `metadata` 对齐：`{ truncated }`。
 
@@ -118,7 +118,7 @@ scripts/vendor.sh patches          # 重新生成补丁
 对齐是尽力而为，以下上游能力超出插件接口，无法复刻：
 
 1. **Formatter 钩子**：写回后不跑 formatter，diff 以「原内容 vs 重新读取的落盘内容」计算（等价于上游无 formatter 分支）。
-2. **逐调用权限断言 / 外部目录审批**：shim 的 `Permission.assert` 是直通的，真正的门控靠 `options.permission` 的目录级隐藏；对 location 外的绝对路径没有 `external_directory` 审批环节。
+2. **逐调用权限断言 / 外部目录审批**：shim 的 `Permission.assert` 是直通的，`allows` 恒为 `false`，真正的门控靠 `options.permission` 的目录级隐藏；对 location 外的绝对路径没有 `external_directory` 审批环节。副作用是 `edit` 未命中 oldString 时不输出「最近行」提示（提示会展示文件内容，而上游要求先确认 read 权限）。
 3. **AGENTS.md 注入**：`read` 成功后不触发 `sessionInstructions` 的 AGENTS.md 发现与注入。
 4. **resource 的 worktree 展示**：`session.location` 只带 `directory` 不带 `project`，路径展示（diff/报错里的相对路径）的 worktree 判定回退到插件自身 location 的 project——只影响展示文本，不影响文件访问。
 
@@ -135,7 +135,7 @@ opencode-encodeguard-plugin/
 │   └── v2/
 │       ├── bridge.ts               # 建层 → 捕获上游 payload → JSON Schema → 重新注册 + execute 桥接
 │       ├── fs-util.ts              # 最小 FSUtil.Service（stat / readDirectory / resolve / up）
-│       └── upstream/               # 上游 v2.1.4 源码 + shim（见「实现结构」表格）
+│       └── upstream/               # 上游 v2.2.5 源码 + shim（见「实现结构」表格）
 ├── test/smoke.ts                   # bun 冒烟测试（注册、输入校验、GBK/UTF-16 读写、分页、二进制）
 ├── scripts/
 │   ├── vendor.sh                    # 上游同步：status / sync <tag> / verify / patches
@@ -150,7 +150,7 @@ opencode-encodeguard-plugin/
 
 ## 依赖
 
-运行时（`dependencies`）：`@opencode/{ai,plugin,schema,util}@2.1.4`（类型 + 上游导入面）、`effect@4.0.1`（与宿主同版本，必须精确锁定）、`iconv-lite`（编码转换）、`diff`（patch/统计）、`mime-types`（文本输出 mime，与上游同一查询）。
+运行时（`dependencies`）：`@opencode/{ai,plugin,schema,util}@2.2.5`（类型 + 上游导入面）、`effect@4.0.6`（与宿主同版本，必须精确锁定）、`iconv-lite`（编码转换）、`diff`（patch/统计）、`mime-types`（文本输出 mime，与上游同一查询）。
 
 开发（`devDependencies`）：`typescript`、`@types/node`、`@types/mime-types`。
 
@@ -159,12 +159,13 @@ opencode-encodeguard-plugin/
 
 ## 验证
 
-源码与依赖：`@opencode/*` **2.1.4**、effect **4.0.1**（上游 v2.1.4 的 catalog 同版本；`effect/unstable/process` 已转正为 `effect/process`）。
+源码与依赖：`@opencode/*` **2.2.5**、effect **4.0.6**（上游 v2.2.5 的 catalog 同版本；`effect/unstable/process` 已转正为 `effect/process`）。
 
-本次同步重跑了 1–2 项；3–5 项是上次在真实宿主（v2.0.23）上的实测记录，未随本次改动重跑。
+本次 v2.2.5 同步重跑了 1–2 项，并用 2.2.5 宿主做了第 6 项端到端；3–5 项仍是更早在 v2.0.23 上的实测记录。
 
 1. `npm run typecheck` 通过。
 2. `npm run smoke` 全过（33 项）：注册出且仅 `edit` / `read`；输入是普通 JSON Schema（无 `$ref`）；必填字段生效、`offset=-1` 被拒；`limit` 已无 Schema 上限，`limit=5000` 由运行时截到恰好 2000 行；`file` / `text-page` / `list-page` / `edit` 四种 `output` 都通过宿主的 `Schema.Json` 校验（`proto=Object`）；GBK / UTF-16 读取正确解码；GBK 分页（`limit=3`、`offset=4998`）；越界 offset 报 `out of range for this file (3 lines)`；二进制拒绝；目录列表；GBK 编辑后落盘仍是 GBK 字节；UTF-16 编辑后仍是 `FF FE` + `utf16le`；缺文件 / 找不到 oldString / 相同字符串三类报错文案。
 3. 真实 opencode **v2.0.23** 加载（全局 CLI 已从 2.0.12 升到 2.0.23）：`opencode run --standalone` 日志出现 `msg="loading plugin" id=... entrypoint=file:///.../index.ts`，且没有任何插件相关报错——说明 `.js` → `.ts` 模块解析成功。
 4. 宿主内注册与覆盖（同样在 v2.0.23 下）：在 `setup()` 里临时调 `ctx.tool.list()`，对比 `transform` 前后快照——`before` 的 `edit` / `read` 的 `input` 是 Effect Schema，`after` 的 `name` / `input` / `options` 与本插件注册的 payload **完全一致**，证明宿主确实用本插件覆盖了内建同名工具。
 5. 真实模型端到端（OpenCode v2.0.23 + 本 worktree 的插件 + 新建的 GBK 项目）：`read notes.txt` 不带参数、带 `limit=2`（走分页）、`read .`（走目录列表）三次调用**全部成功**，中文与 UTF-16 内容正确、`blob.bin` 报 `Cannot read binary file`；`edit` 把 GBK 文件里的『待编辑』改成『已完成』，落盘后与 `iconv` 往返编码**逐字节一致**，未被编辑的 GBK / UTF-16 文件字节数不变；`read` 传 `offset=-1` 时宿主 `validateInput` 拒绝并回显 `Invalid arguments for tool "read": - offset: Expected a value greater than or equal to 0` 及完整参数。
+6. OpenCode v2.2.5 宿主（`opencode run --standalone`，全局 CLI 2.2.5）同样跑通 GBK 端到端：`read` 正确解码、`edit` 把「待编辑」换成「已完成」，落盘仍是 22 字节 GBK。桌面端自带 service 仍是 2.0.23，也正常加载本插件。

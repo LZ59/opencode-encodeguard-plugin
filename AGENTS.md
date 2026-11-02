@@ -2,7 +2,7 @@
 
 ## 版本策略
 
-- 插件版本**跟随上游**：`package.json` 的 `version` 必须等于 `scripts/vendor/manifest.txt` 里记录的 `sst/opencode` tag 去掉 `v`（当前 `v2.1.4` → `2.1.4`）。
+- 插件版本**跟随上游**：`package.json` 的 `version` 必须等于 `scripts/vendor/manifest.txt` 里记录的 `sst/opencode` tag 去掉 `v`（当前 `v2.2.5` → `2.2.5`）。
 - 同步上游时一并改版本，不要单独递增插件版本：
 
   ```bash

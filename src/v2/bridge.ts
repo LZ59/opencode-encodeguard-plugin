@@ -99,6 +99,9 @@ const permission: Permission.Interface = {
   // Gating happens at the catalog level through each tool's
   // `options.permission`; plugin tools cannot reach the host's rule engine.
   assert: () => Effect.void,
+  // No rules to consult, so the miss hint stays off rather than showing file
+  // lines that a `read` denial might forbid.
+  allows: () => Effect.succeed(false),
 }
 
 const formatter: Formatter.Interface = {
