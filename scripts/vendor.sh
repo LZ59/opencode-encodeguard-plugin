@@ -29,7 +29,7 @@ TREE="src/v2/upstream"
 UPSTREAM_URL="https://github.com/sst/opencode.git"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-note() { printf '%s\n' "$*" >&2; }
+note() { printf '%s\n' "$*"; }
 # `diff` exits 1 to mean "files differ"; under `pipefail` that would abort the
 # caller, so every report path goes through this helper.
 changed_lines() { diff -u "$1" "$2" | grep -E '^[-+][^-+]' | sed 's/^/           /' || true; }
@@ -40,7 +40,7 @@ recorded_commit() { grep -m1 '^# commit:' "$MANIFEST" | awk '{ print $3 }'; }
 
 ensure_cache() {
   if [ ! -d "$CACHE/.git" ]; then
-    note "cloning $UPSTREAM_URL (single branch) into $CACHE"
+    note "cloning $UPSTREAM_URL (single branch) into $CACHE" >&2
     mkdir -p "$(dirname "$CACHE")"
     git clone --filter=blob:none --no-checkout "$UPSTREAM_URL" "$CACHE" >/dev/null
   fi
