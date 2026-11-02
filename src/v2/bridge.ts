@@ -19,7 +19,7 @@
 // option flags, and the edit/read logic itself — is upstream's code, unmodified.
 
 import { Effect, JsonSchema, Layer, Schema, SchemaRepresentation, type Scope } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/process"
 import type { Context as EffectContext } from "@opencode/plugin/effect/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
 import type { ToolEditor } from "@opencode/plugin/effect/tool"

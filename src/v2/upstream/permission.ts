@@ -1,9 +1,10 @@
 export * as Permission from "./permission.js"
 
 // Shim: upstream `permission.ts` wires a ruleset engine onto Bus/Session/Agent.
-// The vendored edit/read tools only reach `Permission.Service.assert`; the
-// actual gating for this plugin happens at the catalog level through each
-// tool's `options.permission`, so `assert` is a pass-through here.
+// The vendored edit/read tools only reach `Permission.Service.assert` (plus the
+// `Permission.Error` union in `file-access`'s signatures, which this plugin's
+// pass-through `assert` never produces); the actual gating for this plugin
+// happens at the catalog level through each tool's `options.permission`.
 import { Context, Effect, Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Permission as PermissionSchema } from "@opencode/schema/permission"
@@ -38,5 +39,18 @@ export type AssertInput = typeof AssertInput.Type
 export interface Interface {
   readonly assert: (input: AssertInput) => Effect.Effect<void>
 }
+
+export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
+  rules: PermissionSchema.Ruleset,
+  permission: Schema.String,
+  resources: Schema.Array(Schema.String),
+  reason: Schema.String.pipe(Schema.optional),
+}) {}
+
+export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permission.CorrectedError", {
+  feedback: Schema.String,
+}) {}
+
+export type Error = BlockedError | CorrectedError
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}

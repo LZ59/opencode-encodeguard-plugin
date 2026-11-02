@@ -29,7 +29,7 @@ TREE="src/v2/upstream"
 UPSTREAM_URL="https://github.com/sst/opencode.git"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-note() { printf '%s\n' "$*"; }
+note() { printf '%s\n' "$*" >&2; }
 # `diff` exits 1 to mean "files differ"; under `pipefail` that would abort the
 # caller, so every report path goes through this helper.
 changed_lines() { diff -u "$1" "$2" | grep -E '^[-+][^-+]' | sed 's/^/           /' || true; }

@@ -45,7 +45,7 @@
  })
  
  export const syncTextBom = Effect.fn("FileMutation.syncTextBom")(function* (
-@@ -63,7 +82,7 @@
+@@ -63,7 +84,7 @@
   * Mutation locking is process-local and serializes cooperating OpenCode
   * changes; external writes can still race.
   */
@@ -54,7 +54,7 @@
    Service,
    Effect.gen(function* () {
      const environment = yield* Environment.Service
-@@ -91,9 +110,14 @@
+@@ -91,9 +112,14 @@
              Effect.as(true),
              Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
            )
@@ -70,7 +70,7 @@
            )
            return writeResult(input.target, existed)
          }),
-@@ -121,8 +145,6 @@
+@@ -121,8 +147,6 @@
    }),
  )
  
